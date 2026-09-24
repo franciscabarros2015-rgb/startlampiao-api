@@ -1,5 +1,5 @@
 // ==========================================
-// STARTLAMPIÃO - API BACKEND
+// STARTLAMPIÃO - DEV SHOWCASE API
 // ROTAS DE PROJETOS
 // ==========================================
 
@@ -7,6 +7,28 @@ const express = require("express");
 const router = express.Router();
 
 const pool = require("../config/db");
+
+
+// ==========================================
+// DTO
+// ==========================================
+
+const {
+    validarProjectEntrada,
+    projectSaida
+} = require("../dtos/project.dto");
+
+
+// ==========================================
+// REPOSITÓRIO
+// ==========================================
+
+const {
+    criarProject,
+    listarProjects,
+    buscarProjectPorId,
+    profileExiste
+} = require("../repositories/project.repository");
 
 
 // ==========================================
@@ -18,32 +40,24 @@ router.get("/", async (req, res) => {
 
     try {
 
-        const resultado = await pool.query(`
-            SELECT
-                p.id,
-                p.title,
-                p.description,
-                p.project_url,
-                p.repository_url,
-                p.profile_id,
-                pr.name AS profile_name,
-                p.created_at
-            FROM projects p
-            INNER JOIN profiles pr
-                ON pr.id = p.profile_id
-            ORDER BY p.id;
-        `);
+        const projects =
+            await listarProjects();
 
-        res.status(200).json(resultado.rows);
+        const resultado =
+            projects.map(projectSaida);
+
+        return res.status(200).json(
+            resultado
+        );
 
     } catch (erro) {
 
         console.error(
             "Erro ao listar projetos:",
-            erro.message
+            erro
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             mensagem: "Erro ao listar projetos."
         });
 
@@ -63,40 +77,43 @@ router.get("/:id", async (req, res) => {
 
         const { id } = req.params;
 
-        const resultado = await pool.query(`
-            SELECT
-                p.id,
-                p.title,
-                p.description,
-                p.project_url,
-                p.repository_url,
-                p.profile_id,
-                pr.name AS profile_name,
-                p.created_at
-            FROM projects p
-            INNER JOIN profiles pr
-                ON pr.id = p.profile_id
-            WHERE p.id = $1;
-        `, [id]);
+        // ----------------------------------
+        // VALIDAÇÃO DO ID
+        // ----------------------------------
 
-        if (resultado.rows.length === 0) {
+        if (!/^\d+$/.test(id)) {
 
-            return res.status(404).json({
-                mensagem: "Projeto não encontrado."
+            return res.status(400).json({
+                mensagem:
+                    "O ID do projeto é inválido."
             });
 
         }
 
-        res.status(200).json(resultado.rows[0]);
+        const project =
+            await buscarProjectPorId(id);
+
+        if (!project) {
+
+            return res.status(404).json({
+                mensagem:
+                    "Projeto não encontrado."
+            });
+
+        }
+
+        return res.status(200).json(
+            projectSaida(project)
+        );
 
     } catch (erro) {
 
         console.error(
             "Erro ao buscar projeto:",
-            erro.message
+            erro
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             mensagem: "Erro ao buscar projeto."
         });
 
@@ -114,84 +131,72 @@ router.post("/", async (req, res) => {
 
     try {
 
-        const {
-            title,
-            description,
-            project_url,
-            repository_url,
-            profile_id
-        } = req.body;
+        // ----------------------------------
+        // DTO DE ENTRADA E VALIDAÇÕES
+        // ----------------------------------
 
-        // ------------------------------------------
-        // Validação dos campos obrigatórios
-        // ------------------------------------------
+        const validacao =
+            validarProjectEntrada(req.body);
 
-        if (!title || !profile_id) {
+        if (!validacao.valido) {
 
             return res.status(400).json({
-                mensagem:
-                    "Os campos title e profile_id são obrigatórios."
+                erro: validacao.erro
             });
 
         }
 
-        // ------------------------------------------
-        // Verifica se o perfil existe
-        // ------------------------------------------
+        // ----------------------------------
+        // VERIFICA SE O PERFIL EXISTE
+        // ----------------------------------
 
-        const perfil = await pool.query(
-            `
-            SELECT id
-            FROM profiles
-            WHERE id = $1;
-            `,
-            [profile_id]
-        );
+        const existe =
+            await profileExiste(
+                validacao.dados.profile_id
+            );
 
-        if (perfil.rows.length === 0) {
+        if (!existe) {
 
             return res.status(404).json({
-                mensagem: "Perfil não encontrado."
+                mensagem:
+                    "Perfil não encontrado."
             });
 
         }
 
-        // ------------------------------------------
-        // Cadastra o projeto
-        // ------------------------------------------
+        // ----------------------------------
+        // PERSISTÊNCIA PELO REPOSITÓRIO
+        // ----------------------------------
 
-        const resultado = await pool.query(`
-            INSERT INTO projects (
-                title,
-                description,
-                project_url,
-                repository_url,
-                profile_id
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *;
-        `, [
-            title,
-            description || null,
-            project_url || null,
-            repository_url || null,
-            profile_id
-        ]);
+        const project =
+            await criarProject(
+                validacao.dados
+            );
 
-        res.status(201).json({
-            mensagem: "Projeto cadastrado com sucesso.",
-            projeto: resultado.rows[0]
+        // ----------------------------------
+        // DTO DE SAÍDA
+        // ----------------------------------
+
+        return res.status(201).json({
+
+            mensagem:
+                "Projeto cadastrado com sucesso.",
+
+            projeto:
+                projectSaida(project)
+
         });
 
     } catch (erro) {
 
         console.error(
             "Erro ao cadastrar projeto:",
-            erro.message
+            erro
         );
 
-        res.status(500).json({
-            mensagem: "Erro ao cadastrar projeto."
+        return res.status(500).json({
+            mensagem:
+                "Erro ao cadastrar projeto."
         });
 
     }
@@ -214,9 +219,10 @@ router.post("/:id/technologies", async (req, res) => {
             technology_id
         } = req.body;
 
-        // ------------------------------------------
-        // Validação
-        // ------------------------------------------
+
+        // ----------------------------------
+        // VALIDAÇÃO
+        // ----------------------------------
 
         if (!technology_id) {
 
@@ -227,9 +233,10 @@ router.post("/:id/technologies", async (req, res) => {
 
         }
 
-        // ------------------------------------------
-        // Verifica se o projeto existe
-        // ------------------------------------------
+
+        // ----------------------------------
+        // VERIFICA SE O PROJETO EXISTE
+        // ----------------------------------
 
         const projeto = await pool.query(
             `
@@ -243,14 +250,16 @@ router.post("/:id/technologies", async (req, res) => {
         if (projeto.rows.length === 0) {
 
             return res.status(404).json({
-                mensagem: "Projeto não encontrado."
+                mensagem:
+                    "Projeto não encontrado."
             });
 
         }
 
-        // ------------------------------------------
-        // Verifica se a tecnologia existe
-        // ------------------------------------------
+
+        // ----------------------------------
+        // VERIFICA SE A TECNOLOGIA EXISTE
+        // ----------------------------------
 
         const tecnologia = await pool.query(
             `
@@ -264,14 +273,16 @@ router.post("/:id/technologies", async (req, res) => {
         if (tecnologia.rows.length === 0) {
 
             return res.status(404).json({
-                mensagem: "Tecnologia não encontrada."
+                mensagem:
+                    "Tecnologia não encontrada."
             });
 
         }
 
-        // ------------------------------------------
-        // Verifica se o relacionamento já existe
-        // ------------------------------------------
+
+        // ----------------------------------
+        // VERIFICA SE A ASSOCIAÇÃO JÁ EXISTE
+        // ----------------------------------
 
         const relacionamentoExistente =
             await pool.query(
@@ -287,7 +298,9 @@ router.post("/:id/technologies", async (req, res) => {
                 ]
             );
 
-        if (relacionamentoExistente.rows.length > 0) {
+        if (
+            relacionamentoExistente.rows.length > 0
+        ) {
 
             return res.status(409).json({
                 mensagem:
@@ -296,9 +309,10 @@ router.post("/:id/technologies", async (req, res) => {
 
         }
 
-        // ------------------------------------------
-        // Cria o relacionamento
-        // ------------------------------------------
+
+        // ----------------------------------
+        // CRIA O RELACIONAMENTO
+        // ----------------------------------
 
         await pool.query(
             `
@@ -314,14 +328,17 @@ router.post("/:id/technologies", async (req, res) => {
             ]
         );
 
-        res.status(201).json({
+
+        return res.status(201).json({
 
             mensagem:
                 "Tecnologia associada ao projeto com sucesso.",
 
-            projeto: projeto.rows[0],
+            projeto:
+                projeto.rows[0],
 
-            tecnologia: tecnologia.rows[0]
+            tecnologia:
+                tecnologia.rows[0]
 
         });
 
@@ -329,10 +346,10 @@ router.post("/:id/technologies", async (req, res) => {
 
         console.error(
             "Erro ao associar tecnologia:",
-            erro.message
+            erro
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             mensagem:
                 "Erro ao associar tecnologia ao projeto."
         });
@@ -353,9 +370,10 @@ router.get("/:id/technologies", async (req, res) => {
 
         const project_id = req.params.id;
 
-        // ------------------------------------------
-        // Primeiro verifica se o projeto existe
-        // ------------------------------------------
+
+        // ----------------------------------
+        // VERIFICA SE O PROJETO EXISTE
+        // ----------------------------------
 
         const projeto = await pool.query(
             `
@@ -369,33 +387,42 @@ router.get("/:id/technologies", async (req, res) => {
         if (projeto.rows.length === 0) {
 
             return res.status(404).json({
-                mensagem: "Projeto não encontrado."
+                mensagem:
+                    "Projeto não encontrado."
             });
 
         }
 
-        // ------------------------------------------
-        // Busca as tecnologias relacionadas
-        // ------------------------------------------
 
-        const tecnologias = await pool.query(`
-            SELECT
-                t.id,
-                t.name,
-                t.description,
-                t.created_at
-            FROM technologies t
-            INNER JOIN project_technologies pt
-                ON pt.technology_id = t.id
-            WHERE pt.project_id = $1
-            ORDER BY t.id;
-        `, [project_id]);
+        // ----------------------------------
+        // BUSCA AS TECNOLOGIAS RELACIONADAS
+        // ----------------------------------
 
-        res.status(200).json({
+        const tecnologias =
+            await pool.query(
+                `
+                SELECT
+                    t.id,
+                    t.name,
+                    t.description,
+                    t.created_at
+                FROM technologies t
+                INNER JOIN project_technologies pt
+                    ON pt.technology_id = t.id
+                WHERE pt.project_id = $1
+                ORDER BY t.id;
+                `,
+                [project_id]
+            );
 
-            projeto: projeto.rows[0],
 
-            tecnologias: tecnologias.rows
+        return res.status(200).json({
+
+            projeto:
+                projeto.rows[0],
+
+            tecnologias:
+                tecnologias.rows
 
         });
 
@@ -403,10 +430,10 @@ router.get("/:id/technologies", async (req, res) => {
 
         console.error(
             "Erro ao listar tecnologias do projeto:",
-            erro.message
+            erro
         );
 
-        res.status(500).json({
+        return res.status(500).json({
             mensagem:
                 "Erro ao listar tecnologias do projeto."
         });

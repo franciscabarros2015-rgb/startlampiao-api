@@ -6,7 +6,26 @@
 const express = require("express");
 const router = express.Router();
 
-const pool = require("../config/db");
+
+// ==========================================
+// DTO
+// ==========================================
+
+const {
+    validarProfileEntrada,
+    profileSaida
+} = require("../dtos/profile.dto");
+
+
+// ==========================================
+// REPOSITÓRIO
+// ==========================================
+
+const {
+    criarProfile,
+    buscarProfilePorId
+} = require("../repositories/profile.repository");
+
 
 // ==========================================
 // POST /api/profiles
@@ -17,126 +36,73 @@ router.post("/", async (req, res) => {
 
     try {
 
-        const {
-            name,
-            email,
-            bio,
-            github_url,
-            linkedin_url
-        } = req.body;
-
         // ----------------------------------
-        // VALIDAÇÃO DO NOME
+        // DTO DE ENTRADA E VALIDAÇÕES
         // ----------------------------------
 
-        if (!name || name.trim() === "") {
+        const validacao =
+            validarProfileEntrada(req.body);
+
+        if (!validacao.valido) {
+
             return res.status(400).json({
-                erro: "O nome é obrigatório."
+                erro: validacao.erro
             });
+
         }
 
-        // ----------------------------------
-        // VALIDAÇÃO DO E-MAIL
-        // ----------------------------------
-
-        if (!email || email.trim() === "") {
-            return res.status(400).json({
-                erro: "O e-mail é obrigatório."
-            });
-        }
-
-        const emailValido =
-            /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-        if (!emailValido.test(email)) {
-            return res.status(400).json({
-                erro: "Informe um e-mail válido."
-            });
-        }
 
         // ----------------------------------
-        // VALIDAÇÃO DAS URLs OPCIONAIS
+        // PERSISTÊNCIA PELO REPOSITÓRIO
         // ----------------------------------
 
-        function urlValida(url) {
+        const profile =
+            await criarProfile(validacao.dados);
 
-            if (!url) {
-                return true;
-            }
-
-            try {
-
-                const endereco = new URL(url);
-
-                return (
-                    endereco.protocol === "http:" ||
-                    endereco.protocol === "https:"
-                );
-
-            } catch {
-
-                return false;
-            }
-        }
-
-        if (!urlValida(github_url)) {
-            return res.status(400).json({
-                erro: "A URL do GitHub é inválida."
-            });
-        }
-
-        if (!urlValida(linkedin_url)) {
-            return res.status(400).json({
-                erro: "A URL do LinkedIn é inválida."
-            });
-        }
 
         // ----------------------------------
-        // INSERÇÃO NO POSTGRESQL
+        // DTO DE SAÍDA
         // ----------------------------------
-
-        const resultado = await pool.query(
-            `
-            INSERT INTO profiles
-                (
-                    name,
-                    email,
-                    bio,
-                    github_url,
-                    linkedin_url
-                )
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *;
-            `,
-            [
-                name.trim(),
-                email.trim(),
-                bio || null,
-                github_url || null,
-                linkedin_url || null
-            ]
-        );
 
         return res.status(201).json({
-            mensagem: "Perfil cadastrado com sucesso.",
-            perfil: resultado.rows[0]
+
+            mensagem:
+                "Perfil cadastrado com sucesso.",
+
+            perfil:
+                profileSaida(profile)
+
         });
+
 
     } catch (error) {
 
-        console.error("Erro ao cadastrar perfil:", error);
+        console.error(
+            "Erro ao cadastrar perfil:",
+            error
+        );
 
-        // E-mail duplicado
+
+        // ----------------------------------
+        // E-MAIL DUPLICADO
+        // ----------------------------------
+
         if (error.code === "23505") {
+
             return res.status(400).json({
-                erro: "Já existe um perfil com esse e-mail."
+                erro:
+                    "Já existe um perfil com esse e-mail."
             });
+
         }
+
 
         return res.status(500).json({
             erro: "Erro interno do servidor."
         });
+
     }
+
 });
 
 
@@ -151,22 +117,33 @@ router.get("/:id", async (req, res) => {
 
         const { id } = req.params;
 
+
+        // ----------------------------------
+        // VALIDAÇÃO DO ID
+        // ----------------------------------
+
         if (!/^\d+$/.test(id)) {
+
             return res.status(400).json({
                 erro: "O ID informado é inválido."
             });
+
         }
 
-        const resultado = await pool.query(
-            `
-            SELECT *
-            FROM profiles
-            WHERE id = $1;
-            `,
-            [id]
-        );
 
-        if (resultado.rows.length === 0) {
+        // ----------------------------------
+        // CONSULTA PELO REPOSITÓRIO
+        // ----------------------------------
+
+        const profile =
+            await buscarProfilePorId(id);
+
+
+        // ----------------------------------
+        // PERFIL NÃO ENCONTRADO
+        // ----------------------------------
+
+        if (!profile) {
 
             return res.status(404).json({
                 erro: "Perfil não encontrado."
@@ -174,18 +151,29 @@ router.get("/:id", async (req, res) => {
 
         }
 
+
+        // ----------------------------------
+        // DTO DE SAÍDA
+        // ----------------------------------
+
         return res.status(200).json(
-            resultado.rows[0]
+            profileSaida(profile)
         );
+
 
     } catch (error) {
 
-        console.error("Erro ao buscar perfil:", error);
+        console.error(
+            "Erro ao buscar perfil:",
+            error
+        );
 
         return res.status(500).json({
             erro: "Erro interno do servidor."
         });
+
     }
+
 });
 
 

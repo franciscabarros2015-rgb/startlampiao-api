@@ -6,7 +6,26 @@
 const express = require("express");
 const router = express.Router();
 
-const pool = require("../config/db");
+
+// ==========================================
+// DTO
+// ==========================================
+
+const {
+    validarTechnologyEntrada,
+    technologySaida
+} = require("../dtos/technology.dto");
+
+
+// ==========================================
+// REPOSITÓRIO
+// ==========================================
+
+const {
+    criarTechnology,
+    listarTechnologies
+} = require("../repositories/technology.repository");
+
 
 // ==========================================
 // POST /api/technologies
@@ -17,47 +36,44 @@ router.post("/", async (req, res) => {
 
     try {
 
-        const {
-            name,
-            description
-        } = req.body;
+        // ----------------------------------
+        // DTO DE ENTRADA E VALIDAÇÕES
+        // ----------------------------------
 
-        // ======================================
-        // VALIDAÇÃO DO NOME
-        // ======================================
+        const validacao =
+            validarTechnologyEntrada(req.body);
 
-        if (!name || name.trim() === "") {
+        if (!validacao.valido) {
 
             return res.status(400).json({
-                erro: "O nome da tecnologia é obrigatório."
+                erro: validacao.erro
             });
 
         }
 
-        // ======================================
-        // INSERÇÃO NO POSTGRESQL
-        // ======================================
 
-        const resultado = await pool.query(
-            `
-            INSERT INTO technologies
-                (
-                    name,
-                    description
-                )
-            VALUES ($1, $2)
-            RETURNING *;
-            `,
-            [
-                name.trim(),
-                description ? description.trim() : null
-            ]
-        );
+        // ----------------------------------
+        // PERSISTÊNCIA PELO REPOSITÓRIO
+        // ----------------------------------
+
+        const technology =
+            await criarTechnology(validacao.dados);
+
+
+        // ----------------------------------
+        // DTO DE SAÍDA
+        // ----------------------------------
 
         return res.status(201).json({
-            mensagem: "Tecnologia cadastrada com sucesso.",
-            tecnologia: resultado.rows[0]
+
+            mensagem:
+                "Tecnologia cadastrada com sucesso.",
+
+            tecnologia:
+                technologySaida(technology)
+
         });
+
 
     } catch (error) {
 
@@ -66,13 +82,20 @@ router.post("/", async (req, res) => {
             error
         );
 
+
+        // ----------------------------------
+        // TECNOLOGIA DUPLICADA
+        // ----------------------------------
+
         if (error.code === "23505") {
 
             return res.status(400).json({
-                erro: "Essa tecnologia já está cadastrada."
+                erro:
+                    "Essa tecnologia já está cadastrada."
             });
 
         }
+
 
         return res.status(500).json({
             erro: "Erro interno do servidor."
@@ -81,6 +104,7 @@ router.post("/", async (req, res) => {
     }
 
 });
+
 
 // ==========================================
 // GET /api/technologies
@@ -91,21 +115,26 @@ router.get("/", async (req, res) => {
 
     try {
 
-        const resultado = await pool.query(
-            `
-            SELECT
-                id,
-                name,
-                description,
-                created_at
-            FROM technologies
-            ORDER BY name ASC;
-            `
-        );
+        // ----------------------------------
+        // CONSULTA PELO REPOSITÓRIO
+        // ----------------------------------
+
+        const technologies =
+            await listarTechnologies();
+
+
+        // ----------------------------------
+        // DTO DE SAÍDA
+        // ----------------------------------
+
+        const resultado =
+            technologies.map(technologySaida);
+
 
         return res.status(200).json(
-            resultado.rows
+            resultado
         );
+
 
     } catch (error) {
 
@@ -121,6 +150,7 @@ router.get("/", async (req, res) => {
     }
 
 });
+
 
 // ==========================================
 // EXPORTA AS ROTAS
