@@ -13,6 +13,10 @@ const options = {
 
         servers: [
             {
+                url: "https://startlampiao-api.onrender.com",
+                description: "Servidor de produção - Render"
+            },
+            {
                 url: "http://localhost:3000",
                 description: "Servidor local"
             }
