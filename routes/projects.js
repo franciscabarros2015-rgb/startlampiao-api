@@ -1,6 +1,7 @@
 // ==========================================
 // STARTLAMPIÃO - DEV SHOWCASE API
 // ROTAS DE PROJETOS
+// ATIVIDADE 1 + ATIVIDADE 2
 // ==========================================
 
 const express = require("express");
@@ -10,7 +11,7 @@ const pool = require("../config/db");
 
 
 // ==========================================
-// DTO
+// DTO DE PROJECT
 // ==========================================
 
 const {
@@ -20,46 +21,97 @@ const {
 
 
 // ==========================================
-// REPOSITÓRIO
+// DTO DE FEEDBACK
+// ==========================================
+
+const {
+    validarFeedbackEntrada,
+    feedbackSaida
+} = require("../dtos/feedback.dto");
+
+
+// ==========================================
+// REPOSITÓRIO DE PROJECT
 // ==========================================
 
 const {
     criarProject,
-    listarProjects,
     buscarProjectPorId,
     profileExiste
 } = require("../repositories/project.repository");
 
 
 // ==========================================
-// 1. LISTAR TODOS OS PROJETOS
-// GET /api/projects
+// SERVICE DE PROJECT
 // ==========================================
 
-router.get("/", async (req, res) => {
+const {
+    listarProjectsComFiltros,
+    adicionarUpvote
+} = require("../services/project.service");
+
+
+// ==========================================
+// SERVICE DE FEEDBACK
+// ==========================================
+
+const {
+    registrarFeedback
+} = require("../services/feedback.service");
+
+
+// ==========================================
+// FUNÇÃO AUXILIAR PARA CRIAR ERROS
+// ==========================================
+
+function criarErro(status, mensagem) {
+
+    const erro = new Error(mensagem);
+
+    erro.status = status;
+
+    return erro;
+}
+
+
+// ==========================================
+// 1. LISTAR PROJETOS
+// GET /api/projects
+//
+// EXEMPLOS:
+// /api/projects?page=1&limit=5
+// /api/projects?technology=JavaScript&page=1&limit=5
+// ==========================================
+
+router.get("/", async (req, res, next) => {
 
     try {
 
-        const projects =
-            await listarProjects();
-
         const resultado =
-            projects.map(projectSaida);
+            await listarProjectsComFiltros(
+                req.query
+            );
 
-        return res.status(200).json(
-            resultado
-        );
+        const projetos =
+            resultado.projetos.map(
+                projectSaida
+            );
+
+        return res.status(200).json({
+
+            projetos,
+
+            paginacao:
+                resultado.paginacao,
+
+            filtro:
+                resultado.filtro
+
+        });
 
     } catch (erro) {
 
-        console.error(
-            "Erro ao listar projetos:",
-            erro
-        );
-
-        return res.status(500).json({
-            mensagem: "Erro ao listar projetos."
-        });
+        next(erro);
 
     }
 
@@ -71,36 +123,45 @@ router.get("/", async (req, res) => {
 // GET /api/projects/:id
 // ==========================================
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", async (req, res, next) => {
 
     try {
 
-        const { id } = req.params;
+        const { id } =
+            req.params;
+
 
         // ----------------------------------
-        // VALIDAÇÃO DO ID
+        // VALIDAR ID
         // ----------------------------------
 
         if (!/^\d+$/.test(id)) {
 
-            return res.status(400).json({
-                mensagem:
-                    "O ID do projeto é inválido."
-            });
+            throw criarErro(
+                400,
+                "O ID do projeto é inválido."
+            );
 
         }
+
+
+        // ----------------------------------
+        // BUSCAR PROJETO
+        // ----------------------------------
 
         const project =
             await buscarProjectPorId(id);
 
+
         if (!project) {
 
-            return res.status(404).json({
-                mensagem:
-                    "Projeto não encontrado."
-            });
+            throw criarErro(
+                404,
+                "Projeto não encontrado."
+            );
 
         }
+
 
         return res.status(200).json(
             projectSaida(project)
@@ -108,14 +169,7 @@ router.get("/:id", async (req, res) => {
 
     } catch (erro) {
 
-        console.error(
-            "Erro ao buscar projeto:",
-            erro
-        );
-
-        return res.status(500).json({
-            mensagem: "Erro ao buscar projeto."
-        });
+        next(erro);
 
     }
 
@@ -127,27 +181,32 @@ router.get("/:id", async (req, res) => {
 // POST /api/projects
 // ==========================================
 
-router.post("/", async (req, res) => {
+router.post("/", async (req, res, next) => {
 
     try {
 
         // ----------------------------------
-        // DTO DE ENTRADA E VALIDAÇÕES
+        // DTO DE ENTRADA
         // ----------------------------------
 
         const validacao =
-            validarProjectEntrada(req.body);
+            validarProjectEntrada(
+                req.body
+            );
+
 
         if (!validacao.valido) {
 
-            return res.status(400).json({
-                erro: validacao.erro
-            });
+            throw criarErro(
+                400,
+                validacao.erro
+            );
 
         }
 
+
         // ----------------------------------
-        // VERIFICA SE O PERFIL EXISTE
+        // VERIFICAR PERFIL
         // ----------------------------------
 
         const existe =
@@ -155,17 +214,19 @@ router.post("/", async (req, res) => {
                 validacao.dados.profile_id
             );
 
+
         if (!existe) {
 
-            return res.status(404).json({
-                mensagem:
-                    "Perfil não encontrado."
-            });
+            throw criarErro(
+                404,
+                "Perfil não encontrado."
+            );
 
         }
 
+
         // ----------------------------------
-        // PERSISTÊNCIA PELO REPOSITÓRIO
+        // CRIAR PROJETO
         // ----------------------------------
 
         const project =
@@ -173,9 +234,6 @@ router.post("/", async (req, res) => {
                 validacao.dados
             );
 
-        // ----------------------------------
-        // DTO DE SAÍDA
-        // ----------------------------------
 
         return res.status(201).json({
 
@@ -189,15 +247,7 @@ router.post("/", async (req, res) => {
 
     } catch (erro) {
 
-        console.error(
-            "Erro ao cadastrar projeto:",
-            erro
-        );
-
-        return res.status(500).json({
-            mensagem:
-                "Erro ao cadastrar projeto."
-        });
+        next(erro);
 
     }
 
@@ -209,11 +259,14 @@ router.post("/", async (req, res) => {
 // POST /api/projects/:id/technologies
 // ==========================================
 
-router.post("/:id/technologies", async (req, res) => {
+router.post(
+    "/:id/technologies",
+    async (req, res, next) => {
 
     try {
 
-        const project_id = req.params.id;
+        const project_id =
+            req.params.id;
 
         const {
             technology_id
@@ -221,67 +274,112 @@ router.post("/:id/technologies", async (req, res) => {
 
 
         // ----------------------------------
-        // VALIDAÇÃO
+        // VALIDAR ID DO PROJETO
         // ----------------------------------
 
-        if (!technology_id) {
+        if (!/^\d+$/.test(project_id)) {
 
-            return res.status(400).json({
-                mensagem:
-                    "O campo technology_id é obrigatório."
-            });
+            throw criarErro(
+                400,
+                "O ID do projeto é inválido."
+            );
 
         }
 
 
         // ----------------------------------
-        // VERIFICA SE O PROJETO EXISTE
+        // VALIDAR TECHNOLOGY_ID
         // ----------------------------------
 
-        const projeto = await pool.query(
-            `
-            SELECT id, title
-            FROM projects
-            WHERE id = $1;
-            `,
-            [project_id]
-        );
+        if (
+            technology_id === undefined ||
+            technology_id === null ||
+            technology_id === ""
+        ) {
 
-        if (projeto.rows.length === 0) {
+            throw criarErro(
+                400,
+                "O campo technology_id é obrigatório."
+            );
 
-            return res.status(404).json({
-                mensagem:
-                    "Projeto não encontrado."
-            });
+        }
+
+
+        const technologyIdNumero =
+            Number(technology_id);
+
+
+        if (
+            !Number.isInteger(
+                technologyIdNumero
+            ) ||
+            technologyIdNumero <= 0
+        ) {
+
+            throw criarErro(
+                400,
+                "O technology_id deve ser um número inteiro válido."
+            );
 
         }
 
 
         // ----------------------------------
-        // VERIFICA SE A TECNOLOGIA EXISTE
+        // VERIFICAR PROJETO
         // ----------------------------------
 
-        const tecnologia = await pool.query(
-            `
-            SELECT id, name
-            FROM technologies
-            WHERE id = $1;
-            `,
-            [technology_id]
-        );
+        const projeto =
+            await pool.query(
+                `
+                SELECT id, title
+                FROM projects
+                WHERE id = $1;
+                `,
+                [project_id]
+            );
 
-        if (tecnologia.rows.length === 0) {
 
-            return res.status(404).json({
-                mensagem:
-                    "Tecnologia não encontrada."
-            });
+        if (
+            projeto.rows.length === 0
+        ) {
+
+            throw criarErro(
+                404,
+                "Projeto não encontrado."
+            );
 
         }
 
 
         // ----------------------------------
-        // VERIFICA SE A ASSOCIAÇÃO JÁ EXISTE
+        // VERIFICAR TECNOLOGIA
+        // ----------------------------------
+
+        const tecnologia =
+            await pool.query(
+                `
+                SELECT id, name
+                FROM technologies
+                WHERE id = $1;
+                `,
+                [technologyIdNumero]
+            );
+
+
+        if (
+            tecnologia.rows.length === 0
+        ) {
+
+            throw criarErro(
+                404,
+                "Tecnologia não encontrada."
+            );
+
+        }
+
+
+        // ----------------------------------
+        // VERIFICAR ASSOCIAÇÃO
         // ----------------------------------
 
         const relacionamentoExistente =
@@ -294,24 +392,26 @@ router.post("/:id/technologies", async (req, res) => {
                 `,
                 [
                     project_id,
-                    technology_id
+                    technologyIdNumero
                 ]
             );
 
+
         if (
-            relacionamentoExistente.rows.length > 0
+            relacionamentoExistente
+                .rows.length > 0
         ) {
 
-            return res.status(409).json({
-                mensagem:
-                    "Essa tecnologia já está associada ao projeto."
-            });
+            throw criarErro(
+                409,
+                "Essa tecnologia já está associada ao projeto."
+            );
 
         }
 
 
         // ----------------------------------
-        // CRIA O RELACIONAMENTO
+        // CRIAR ASSOCIAÇÃO
         // ----------------------------------
 
         await pool.query(
@@ -324,7 +424,7 @@ router.post("/:id/technologies", async (req, res) => {
             `,
             [
                 project_id,
-                technology_id
+                technologyIdNumero
             ]
         );
 
@@ -344,15 +444,7 @@ router.post("/:id/technologies", async (req, res) => {
 
     } catch (erro) {
 
-        console.error(
-            "Erro ao associar tecnologia:",
-            erro
-        );
-
-        return res.status(500).json({
-            mensagem:
-                "Erro ao associar tecnologia ao projeto."
-        });
+        next(erro);
 
     }
 
@@ -364,38 +456,59 @@ router.post("/:id/technologies", async (req, res) => {
 // GET /api/projects/:id/technologies
 // ==========================================
 
-router.get("/:id/technologies", async (req, res) => {
+router.get(
+    "/:id/technologies",
+    async (req, res, next) => {
 
     try {
 
-        const project_id = req.params.id;
+        const project_id =
+            req.params.id;
 
 
         // ----------------------------------
-        // VERIFICA SE O PROJETO EXISTE
+        // VALIDAR ID
         // ----------------------------------
 
-        const projeto = await pool.query(
-            `
-            SELECT id, title
-            FROM projects
-            WHERE id = $1;
-            `,
-            [project_id]
-        );
+        if (!/^\d+$/.test(project_id)) {
 
-        if (projeto.rows.length === 0) {
-
-            return res.status(404).json({
-                mensagem:
-                    "Projeto não encontrado."
-            });
+            throw criarErro(
+                400,
+                "O ID do projeto é inválido."
+            );
 
         }
 
 
         // ----------------------------------
-        // BUSCA AS TECNOLOGIAS RELACIONADAS
+        // VERIFICAR PROJETO
+        // ----------------------------------
+
+        const projeto =
+            await pool.query(
+                `
+                SELECT id, title
+                FROM projects
+                WHERE id = $1;
+                `,
+                [project_id]
+            );
+
+
+        if (
+            projeto.rows.length === 0
+        ) {
+
+            throw criarErro(
+                404,
+                "Projeto não encontrado."
+            );
+
+        }
+
+
+        // ----------------------------------
+        // BUSCAR TECNOLOGIAS
         // ----------------------------------
 
         const tecnologias =
@@ -428,15 +541,114 @@ router.get("/:id/technologies", async (req, res) => {
 
     } catch (erro) {
 
-        console.error(
-            "Erro ao listar tecnologias do projeto:",
-            erro
-        );
+        next(erro);
 
-        return res.status(500).json({
+    }
+
+});
+
+
+// ==========================================
+// 6. ADICIONAR UPVOTE AO PROJETO
+// PUT /api/projects/:id/upvote
+// ATIVIDADE 2
+// ==========================================
+
+router.put(
+    "/:id/upvote",
+    async (req, res, next) => {
+
+    try {
+
+        const projeto =
+            await adicionarUpvote(
+                req.params.id
+            );
+
+
+        return res.status(200).json({
+
             mensagem:
-                "Erro ao listar tecnologias do projeto."
+                "Upvote registrado com sucesso.",
+
+            projeto
+
         });
+
+    } catch (erro) {
+
+        next(erro);
+
+    }
+
+});
+
+
+// ==========================================
+// 7. CADASTRAR FEEDBACK NO PROJETO
+// POST /api/projects/:id/feedbacks
+// ATIVIDADE 2
+// ==========================================
+
+router.post(
+    "/:id/feedbacks",
+    async (req, res, next) => {
+
+    try {
+
+        // ----------------------------------
+        // VALIDAR FEEDBACK
+        // ----------------------------------
+
+        const validacao =
+            validarFeedbackEntrada(
+                req.body
+            );
+
+
+        if (!validacao.valido) {
+
+            throw criarErro(
+                400,
+                validacao.erro
+            );
+
+        }
+
+
+        // ----------------------------------
+        // SERVICE
+        // ----------------------------------
+
+        const resultado =
+            await registrarFeedback(
+                req.params.id,
+                validacao.dados
+            );
+
+
+        // ----------------------------------
+        // RESPOSTA
+        // ----------------------------------
+
+        return res.status(201).json({
+
+            mensagem:
+                "Feedback registrado com sucesso.",
+
+            feedback:
+                feedbackSaida(
+                    resultado.feedback
+                ),
+
+            projeto:
+                resultado.projeto
+
+        });
+
+    } catch (erro) {
+
+        next(erro);
 
     }
 

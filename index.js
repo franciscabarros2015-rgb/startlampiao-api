@@ -3,85 +3,92 @@
 // ARQUIVO PRINCIPAL DO SERVIDOR
 // ==========================================
 
-// Carrega as variáveis do arquivo .env
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 
-// Conexão com PostgreSQL
+// Banco de dados
 const pool = require("./config/db");
 
-// ==========================================
-// IMPORTAÇÃO DAS ROTAS
-// ==========================================
+// Swagger
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./config/swagger");
 
-const profilesRoutes = require("./routes/profiles");
-const technologiesRoutes = require("./routes/technologies");
-const projectsRoutes = require("./routes/projects");
-const feedbacksRoutes = require("./routes/feedbacks");
+// Rotas
+const profilesRoutes =
+    require("./routes/profiles");
 
-// ==========================================
-// CRIAÇÃO DA APLICAÇÃO
-// ==========================================
+const technologiesRoutes =
+    require("./routes/technologies");
+
+const projectsRoutes =
+    require("./routes/projects");
+
+const feedbacksRoutes =
+    require("./routes/feedbacks");
+
+// Tratamento global de erros
+const {
+    rotaNaoEncontrada,
+    errorHandler
+} = require("./middlewares/errorHandler");
 
 const app = express();
 
+// Middlewares
+app.use(cors());
+app.use(
+    express.json()
+);
+
 // ==========================================
-// MIDDLEWARES
+// SWAGGER / OPENAPI
 // ==========================================
 
-app.use(cors());
-app.use(express.json());
+app.use(
+    "/api-docs",
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec)
+);
 
 // ==========================================
 // ROTA INICIAL
 // ==========================================
 
 app.get("/", (req, res) => {
-
     res.status(200).json({
         sucesso: true,
-        mensagem: "API do StartLampião funcionando!"
+        mensagem:
+            "API do StartLampião funcionando!"
     });
-
 });
 
 // ==========================================
-// ROTA PARA TESTAR O POSTGRESQL
+// TESTE DO BANCO
 // ==========================================
 
-app.get("/teste-banco", async (req, res) => {
+app.get(
+    "/teste-banco",
+    async (req, res, next) => {
+        try {
+            const resultado =
+                await pool.query(
+                    "SELECT NOW() AS data_hora"
+                );
 
-    try {
-
-        const resultado = await pool.query(
-            "SELECT NOW() AS data_hora"
-        );
-
-        res.status(200).json({
-            sucesso: true,
-            mensagem:
-                "Conexão com PostgreSQL realizada com sucesso!",
-            banco: resultado.rows[0]
-        });
-
-    } catch (erro) {
-
-        console.error(
-            "Erro ao consultar PostgreSQL:",
-            erro.message
-        );
-
-        res.status(500).json({
-            sucesso: false,
-            mensagem:
-                "Erro ao conectar com o PostgreSQL."
-        });
-
+            return res.status(200).json({
+                sucesso: true,
+                mensagem:
+                    "Conexão com PostgreSQL realizada com sucesso!",
+                banco:
+                    resultado.rows[0]
+            });
+        } catch (erro) {
+            next(erro);
+        }
     }
-
-});
+);
 
 // ==========================================
 // ROTAS DA API
@@ -108,19 +115,27 @@ app.use(
 );
 
 // ==========================================
-// PORTA DO SERVIDOR
+// TRATAMENTO GLOBAL DE ERROS
+// IMPORTANTE: DEVE FICAR DEPOIS DAS ROTAS
 // ==========================================
 
-const PORT = process.env.PORT || 3000;
+app.use(
+    rotaNaoEncontrada
+);
+
+app.use(
+    errorHandler
+);
 
 // ==========================================
-// INICIAR SERVIDOR
+// INICIALIZAÇÃO DO SERVIDOR
 // ==========================================
+
+const PORT =
+    process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-
     console.log(
         `Servidor StartLampião rodando na porta ${PORT}`
     );
-
 });

@@ -203,6 +203,16 @@ function projectSaida(project) {
                 ? project.profile_name
                 : undefined,
 
+        average_rating:
+            project.average_rating !== undefined
+                ? project.average_rating
+                : undefined,
+
+        upvotes:
+            project.upvotes !== undefined
+                ? project.upvotes
+                : undefined,
+
         created_at: project.created_at
 
     };
